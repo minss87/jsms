@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손가락 오케스트라</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1B1F23;
+    --ink-2: #3A4148;
+    --paper: #EEF0F2;
+    --glass: rgba(255,255,255,0.55);
+    --glass-line: rgba(255,255,255,0.95);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    overflow: hidden;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Noto Sans KR', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button { font: inherit; color: inherit; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+  /* ---------- 카메라 ---------- */
+  .stage { position: fixed; inset: 0; overflow: hidden; }
+  .fallback {
+    position: absolute; inset: -100px;
+    background:
+      radial-gradient(ellipse 20% 32% at 46% 60%, #C9A08A 0%, transparent 70%),
+      radial-gradient(ellipse 36% 44% at 50% 28%, #9AA6B0 0%, transparent 70%),
+      linear-gradient(180deg, #C4CBD1 0%, #E2E4E6 100%);
+    filter: blur(56px);
+  }
+  .bg-video {
+    position: absolute; inset: -80px;
+    width: calc(100% + 160px); height: calc(100% + 160px);
+    object-fit: cover;
+    filter: blur(44px) saturate(1.1);
+    transform: scaleX(-1);
+    opacity: 0; transition: opacity .6s;
+  }
+  .wash { position: absolute; inset: 0; background: rgba(246,247,248,0.55); }
+  .cam {
+    position: absolute; left: 50%; top: 50%;
+    width: min(720px, 56vw);
+    aspect-ratio: 4 / 3;
+    translate: -50% -52%;
+  }
+  .cam video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
+                        linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
+    -webkit-mask-composite: source-in;
+            mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
+                        linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
+            mask-composite: intersect;
+    opacity: 0; transition: opacity .6s;
+  }
+  .live .bg-video, .live .cam video { opacity: 1; }
+  .status {
+    position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+    font-size: 15px; color: var(--ink-2); text-align: center; white-space: pre-line;
+  }
+  .rec {
+    position: absolute; right: 12%; top: 12%;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #E5484D; opacity: 0;
+  }
+  .capturing .rec { opacity: 1; animation: blink 0.8s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+
+  /* ---------- 상단 ---------- */
+  h1 {
+    position: fixed; left: 40px; top: 32px; margin: 0;
+    font-size: 17px; font-weight: 500; letter-spacing: -0.01em;
+  }
+  .tools { position: fixed; right: 32px; top: 24px; display: flex; gap: 8px; }
+  .tool {
+    appearance: none; cursor: pointer;
+    min-height: 40px; padding: 8px 16px; border-radius: 999px;
+    border: 1px solid var(--glass-line);
+    background: var(--glass);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    font-size: 14px; color: var(--ink-2);
+    box-shadow: 0 6px 18px rgba(30,40,50,0.06);
+  }
+  .tool:hover { color: var(--ink); }
+
+  /* ---------- 음 버튼 ---------- */
+  .side {
+    position: fixed; top: 50%; translate: 0 -55%;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .side.left { left: 6%; }
+  .side.right { right: 6%; }
+  .key {
+    position: relative;
+    appearance: none; cursor: pointer; touch-action: none;
+    width: 84px; height: 84px; border-radius: 50%;
+    border: 1px solid var(--glass-line);
+    background: var(--glass);
+    color: var(--ink);
+    backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 8px 24px rgba(30,40,50,0.10);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    transition: background .12s, color .12s, box-shadow .12s, transform .12s;
+  }
+  .key .note { font-size: 26px; font-weight: 700; line-height: 1; }
+  .key .sub { height: 14px; display: flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 500; }
+  .key .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .6; }
+  .key.on {
+    background: var(--ink); color: #fff; border-color: var(--ink);
+    box-shadow: 0 12px 32px rgba(27,31,35,0.35);
+    transform: scale(1.06);
+  }
+  .key.sel { box-shadow: 0 0 0 3px var(--ink), 0 8px 24px rgba(30,40,50,0.10); }
+  .key .clear {
+    position: absolute; right: -4px; top: -4px;
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 0; background: var(--ink); color: #fff;
+    font-size: 14px; line-height: 24px; cursor: pointer;
+    display: none;
+  }
+  .train .key.has:hover .clear { display: block; }
+
+  /* ---------- 하단 ---------- */
+  .bottom {
+    position: fixed; left: 50%; bottom: 40px; translate: -50% 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .seg {
+    display: flex; gap: 4px; padding: 5px; border-radius: 999px;
+    background: var(--glass); border: 1px solid var(--glass-line);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 24px rgba(30,40,50,0.08);
+  }
+  .seg button {
+    appearance: none; cursor: pointer; border: 0; border-radius: 999px;
+    min-height: 44px; padding: 10px 26px;
+    font-size: 15px; font-weight: 500; background: transparent; color: var(--ink-2);
+  }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; font-weight: 700; }
+  .pill {
+    appearance: none; cursor: pointer; touch-action: none;
+    min-height: 54px; padding: 10px 24px; border-radius: 999px;
+    border: 1px solid var(--glass-line); background: var(--glass);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 24px rgba(30,40,50,0.08);
+    font-size: 15px; font-weight: 500; color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pill.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .pill .count { font-size: 12px; opacity: .7; }
+  .pill.primary { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 700; }
+  .play .train-only { display: none; }
+
+  /* ---------- 알림 ---------- */
+  .toast {
+    position: fixed; left: 50%; top: 32px; translate: -50% -8px;
+    padding: 10px 20px; border-radius: 999px;
+    background: var(--ink); color: #fff; font-size: 14px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, translate .2s;
+  }
+  .toast.show { opacity: 1; translate: -50% 0; }
+
+  @media (max-width: 820px) {
+    .side.left { left: 3%; } .side.right { right: 3%; }
+    .key { width: 68px; height: 68px; } .key .note { font-size: 22px; }
+    .cam { width: 64vw; }
+    h1 { left: 20px; top: 20px; } .tools { right: 16px; top: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body class="train">
+  <div class="stage" id="stage">
+    <div class="fallback" aria-hidden="true"></div>
+    <video class="bg-video" id="bgVideo" muted playsinline aria-hidden="true"></video>
+    <div class="wash" aria-hidden="true"></div>
+    <div class="cam">
+      <video id="video" muted playsinline aria-label="카메라 화면"></video>
+      <div class="status" id="status">준비 중…</div>
+      <span class="rec" aria-hidden="true"></span>
+    </div>
+  </div>
+
+  <h1>손가락 오케스트라</h1>
+
+  <div class="tools">
+    <button class="tool" id="saveBtn" type="button">저장</button>
+    <button class="tool" id="loadBtn" type="button">불러오기</button>
+    <button class="tool" id="resetBtn" type="button">초기화</button>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden>
+  </div>
+
+  <div class="side left" id="leftSide" aria-label="왼손"></div>
+  <div class="side right" id="rightSide" aria-label="오른손"></div>
+
+  <div class="bottom">
+    <button class="pill train-only" id="restBtn" type="button" data-key="REST">쉼 <span class="count" id="restCount">0</span></button>
+    <div class="seg" role="group" aria-label="모드">
+      <button type="button" id="trainTab" aria-pressed="true">학습</button>
+      <button type="button" id="playTab" aria-pressed="false">연주</button>
+    </div>
+    <button class="pill primary train-only" id="fitBtn" type="button">학습시키기</button>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.6/dist/knn-classifier.min.js"></script>
+  <script>
+  // ===================== 설정 =====================
+  // 음을 바꾸고 싶으면 여기만 고치면 됩니다.
+  const KEYS = [
+    { key: 'L1', side: 'left',  fingers: 1, note: '도', freq: 261.63 },
+    { key: 'L2', side: 'left',  fingers: 2, note: '레', freq: 293.66 },
+    { key: 'L3', side: 'left',  fingers: 3, note: '미', freq: 329.63 },
+    { key: 'L4', side: 'left',  fingers: 4, note: '파', freq: 349.23 },
+    { key: 'R1', side: 'right', fingers: 1, note: '솔', freq: 392.00 },
+    { key: 'R2', side: 'right', fingers: 2, note: '라', freq: 440.00 },
+    { key: 'R3', side: 'right', fingers: 3, note: '시', freq: 493.88 },
+    { key: 'R4', side: 'right', fingers: 4, note: '도', freq: 523.25 },
+  ];
+  const REST = 'REST';
+  const CAPTURE_MS = 120;     // 꾹 누르고 있을 때 사진 찍는 간격
+  const PREDICT_MS = 90;      // 연주 모드에서 판별하는 간격
+  const STABLE_FRAMES = 3;    // 같은 결과가 몇 번 이어져야 소리를 낼지
+  const MIN_CONFIDENCE = 0.75;
+
+  // ===================== 상태 =====================
+  const samples = {};          // key -> Float32Array[] (MobileNet 특징값)
+  [...KEYS.map(k => k.key), REST].forEach(k => samples[k] = []);
+  let net = null;
+  let knn = null;
+  let mode = 'train';
+  let trainedCount = 0;
+  let captureTimer = null;
+  let capturingKey = null;
+  let selectedKey = null;
+  let predictTimer = null;
+  let candidate = null, streak = 0, current = null;
+  let audio = null;
+
+  const $ = id => document.getElementById(id);
+  const video = $('video'), bgVideo = $('bgVideo');
+  const statusEl = $('status');
+  const keyEls = {};
+
+  // ===================== 화면 만들기 =====================
+  KEYS.forEach(k => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'key';
+    b.dataset.key = k.key;
+    b.setAttribute('aria-label', (k.side === 'left' ? '왼손 ' : '오른손 ') + k.fingers + ' ' + k.note);
+    b.innerHTML = '<span class="note">' + k.note + '</span><span class="sub"></span>'
+      + '<span class="clear" role="button" aria-label="이 클래스 사진 지우기" title="이 클래스 사진 지우기">×</span>';
+    (k.side === 'left' ? $('leftSide') : $('rightSide')).appendChild(b);
+    keyEls[k.key] = b;
+    bindKey(b, k.key);
+  });
+  bindKey($('restBtn'), REST);
+
+  function renderKeys() {
+    KEYS.forEach(k => {
+      const b = keyEls[k.key];
+      const sub = b.querySelector('.sub');
+      const n = samples[k.key].length;
+      if (mode === 'train') {
+        sub.textContent = n;
+      } else {
+        sub.innerHTML = '<span class="dot"></span>'.repeat(k.fingers);
+      }
+      b.classList.toggle('has', n > 0);
+      b.classList.toggle('on', mode === 'train' ? capturingKey === k.key : current === k.key);
+      b.classList.toggle('sel', mode === 'train' && selectedKey === k.key && capturingKey !== k.key);
+    });
+    $('restCount').textContent = samples[REST].length;
+    $('restBtn').classList.toggle('on', capturingKey === REST);
+  }
+
+  // ===================== 버튼 동작 =====================
+  function bindKey(el, key) {
+    const start = e => {
+      if (e.target.classList && e.target.classList.contains('clear')) return;
+      e.preventDefault();
+      ensureAudio();
+      if (mode === 'train') startCapture(key);
+      else if (key !== REST) playNote(KEYS.find(k => k.key === key).freq);
+    };
+    const stop = () => { if (capturingKey === key) stopCapture(); };
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointerleave', stop);
+    el.addEventListener('pointercancel', stop);
+    el.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) start(e); });
+    el.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') stop(); });
+    const clear = el.querySelector('.clear');
+    if (clear) clear.addEventListener('pointerdown', e => {
+      e.stopPropagation(); e.preventDefault();
+      samples[key] = [];
+      toast('지웠어요');
+      renderKeys();
+    });
+  }
+
+  function startCapture(key) {
+    if (!net) { toast('아직 준비 중이에요'); return; }
+    stopCapture();
+    capturingKey = key; selectedKey = key;
+    document.body.classList.add('capturing');
+    grab();
+    captureTimer = setInterval(grab, CAPTURE_MS);
+    renderKeys();
+  }
+  function stopCapture() {
+    clearInterval(captureTimer); captureTimer = null;
+    capturingKey = null;
+    document.body.classList.remove('capturing');
+    renderKeys();
+  }
+  function grab() {
+    if (!capturingKey || video.readyState < 2) return;
+    const feat = tf.tidy(() => net.infer(video, true));
+    samples[capturingKey].push(feat.dataSync().slice());
+    feat.dispose();
+    renderKeys();
+  }
+
+  // ===================== 학습 =====================
+  function totalSamples() { return Object.values(samples).reduce((s, a) => s + a.length, 0); }
+
+  function fit() {
+    const filled = Object.keys(samples).filter(k => samples[k].length > 0);
+    if (filled.length < 2) { toast('클래스 2개 이상 찍어 주세요'); return false; }
+    if (knn) knn.clearAllClasses(); else knn = knnClassifier.create();
+    filled.forEach(k => samples[k].forEach(arr => {
+      const t = tf.tensor(arr);
+      knn.addExample(t, k);
+      t.dispose();
+    }));
+    trainedCount = totalSamples();
+    const missingRest = samples[REST].length === 0;
+    toast(missingRest ? '학습 완료 · 쉼도 찍으면 더 좋아요' : '학습 완료 · 사진 ' + trainedCount + '장');
+    return true;
+  }
+
+  // ===================== 모드 =====================
+  function setMode(m) {
+    if (m === 'play') {
+      if (!net) { toast('아직 준비 중이에요'); return; }
+      if (!knn || trainedCount !== totalSamples()) { if (!fit()) return; }
+    }
+    stopCapture();
+    mode = m;
+    document.body.classList.toggle('train', m === 'train');
+    document.body.classList.toggle('play', m === 'play');
+    $('trainTab').setAttribute('aria-pressed', m === 'train');
+    $('playTab').setAttribute('aria-pressed', m === 'play');
+    current = null; candidate = null; streak = 0;
+    clearInterval(predictTimer);
+    if (m === 'play') predictTimer = setInterval(predict, PREDICT_MS);
+    renderKeys();
+  }
+  $('trainTab').addEventListener('click', () => setMode('train'));
+  $('playTab').addEventListener('click', () => { ensureAudio(); setMode('play'); });
+  $('fitBtn').addEventListener('click', () => { ensureAudio(); if (fit()) setMode('play'); });
+
+  // ===================== 판별 =====================
+  let predicting = false;
+  async function predict() {
+    if (predicting || mode !== 'play' || !knn || video.readyState < 2) return;
+    predicting = true;
+    try {
+      const feat = tf.tidy(() => net.infer(video, true));
+      const k = Math.max(1, Math.min(10, Math.floor(trainedCount / 9)));
+      const res = await knn.predictClass(feat, k);
+      feat.dispose();
+      const label = res.label;
+      const conf = res.confidences[label] || 0;
+      if (label === candidate) streak++; else { candidate = label; streak = 1; }
+      if (streak >= STABLE_FRAMES && conf >= MIN_CONFIDENCE && label !== current) {
+        current = label;
+        if (label !== REST) {
+          const k2 = KEYS.find(x => x.key === label);
+          if (k2) playNote(k2.freq);
+        }
+        renderKeys();
+      }
+    } finally { predicting = false; }
+  }
+
+  // ===================== 소리 =====================
+  function ensureAudio() {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+  }
+  function playNote(freq) {
+    if (!audio) return;
+    const t = audio.currentTime;
+    const out = audio.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    out.connect(audio.destination);
+    [[1, 'triangle', 1], [2, 'sine', 0.35], [3, 'sine', 0.12]].forEach(([mul, type, g]) => {
+      const o = audio.createOscillator();
+      const og = audio.createGain();
+      o.type = type; o.frequency.value = freq * mul;
+      og.gain.value = g;
+      o.connect(og).connect(out);
+      o.start(t); o.stop(t + 1.5);
+    });
+  }
+
+  // ===================== 저장 / 불러오기 / 초기화 =====================
+  $('saveBtn').addEventListener('click', () => {
+    if (totalSamples() === 0) { toast('저장할 사진이 없어요'); return; }
+    const data = {};
+    Object.keys(samples).forEach(k => data[k] = samples[k].map(a => Array.from(a, v => Math.round(v * 1e4) / 1e4)));
+    const blob = new Blob([JSON.stringify({ app: 'finger-orchestra', v: 1, data })], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '손가락오케스트라-모델.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  $('loadBtn').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const json = JSON.parse(await f.text());
+      if (json.app !== 'finger-orchestra') throw new Error();
+      Object.keys(samples).forEach(k => samples[k] = (json.data[k] || []).map(a => Float32Array.from(a)));
+      knn = null; trainedCount = 0;
+      setMode('train');
+      toast('불러왔어요 · 사진 ' + totalSamples() + '장');
+    } catch { toast('이 파일은 열 수 없어요'); }
+  });
+  $('resetBtn').addEventListener('click', () => {
+    if (!confirm('찍은 사진을 모두 지울까요?')) return;
+    Object.keys(samples).forEach(k => samples[k] = []);
+    if (knn) knn.clearAllClasses();
+    knn = null; trainedCount = 0;
+    setMode('train');
+  });
+
+  // ===================== 알림 =====================
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+  }
+
+  // ===================== 시작 =====================
+  async function init() {
+    renderKeys();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+      video.srcObject = stream; bgVideo.srcObject = stream;
+      await video.play(); bgVideo.play();
+      $('stage').classList.add('live');
+      statusEl.textContent = 'AI 불러오는 중…';
+    } catch (err) {
+      statusEl.textContent = '카메라를 쓸 수 없어요\n주소창의 카메라 권한을 허용해 주세요';
+      return;
+    }
+    try {
+      net = await mobilenet.load({ version: 2, alpha: 1.0 });
+      tf.tidy(() => net.infer(video, true)); // 첫 실행 준비
+      statusEl.textContent = '';
+    } catch (err) {
+      statusEl.textContent = 'AI를 불러오지 못했어요\n인터넷 연결을 확인해 주세요';
+    }
+  }
+  init();
+  </script>
+</body>
+</html>
